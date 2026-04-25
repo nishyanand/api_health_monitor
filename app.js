@@ -12,6 +12,5 @@ app.use('/api', apiRoutes);
 app.get('/', (req, res) => {
   res.json({ message: 'API Health Monitor is running 🟢' });
 });
-
-module.exports = app;
 app.use(errorHandler);
+module.exports = app;

@@ -1,20 +1,14 @@
-const bcrypt    = require('bcryptjs');
-const jwt       = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
-const {
-  findUserByEmail,
-  findUserById,
-  createUser
-} = require('../models/user.model');
+const jwt  = require('jsonwebtoken');
+const User = require('../models/user.model');
 
 // ─────────────────────────────────────────────
-// Helper: generate JWT token for a user
+// Helper: generate JWT token
 // ─────────────────────────────────────────────
 function generateToken(userId) {
   return jwt.sign(
-    { userId },                          // payload — what we store inside token
-    process.env.JWT_SECRET,              // secret key to sign with
-    { expiresIn: process.env.JWT_EXPIRES_IN } // token expiry
+    { userId },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN }
   );
 }
 
@@ -22,13 +16,12 @@ function generateToken(userId) {
 // ─────────────────────────────────────────────
 // REGISTER
 // POST /api/auth/register
-// Body: { name, email, password }
 // ─────────────────────────────────────────────
 async function register(req, res, next) {
   try {
     const { name, email, password } = req.body;
 
-    // validate — all fields required
+    // validate
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
@@ -36,8 +29,8 @@ async function register(req, res, next) {
       });
     }
 
-    // check if user already exists
-    const existingUser = findUserByEmail(email);
+    // check duplicate email
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(409).json({
         success: false,
@@ -45,27 +38,18 @@ async function register(req, res, next) {
       });
     }
 
-    // hash the password — never store plain text
-    // 10 = salt rounds (how strong the hash is)
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // create user — password is hashed automatically
+    // by the pre save hook in user.model.js
+    const user = await User.create({ name, email, password });
 
-    // create user
-    const user = createUser({
-      id      : uuidv4(),   // unique id
-      name,
-      email,
-      password: hashedPassword,
-    });
-
-    // generate token
-    const token = generateToken(user.id);
+    const token = generateToken(user._id);
 
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
       token,
       user: {
-        id   : user.id,
+        id   : user._id,
         name : user.name,
         email: user.email,
       },
@@ -80,7 +64,6 @@ async function register(req, res, next) {
 // ─────────────────────────────────────────────
 // LOGIN
 // POST /api/auth/login
-// Body: { email, password }
 // ─────────────────────────────────────────────
 async function login(req, res, next) {
   try {
@@ -95,7 +78,7 @@ async function login(req, res, next) {
     }
 
     // find user
-    const user = findUserByEmail(email);
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -103,24 +86,23 @@ async function login(req, res, next) {
       });
     }
 
-    // compare password with stored hash
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
+    // compare password using model method
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password',
       });
     }
 
-    // generate token
-    const token = generateToken(user.id);
+    const token = generateToken(user._id);
 
     res.json({
       success: true,
       message: 'Login successful',
       token,
       user: {
-        id   : user.id,
+        id   : user._id,
         name : user.name,
         email: user.email,
       },
@@ -133,13 +115,13 @@ async function login(req, res, next) {
 
 
 // ─────────────────────────────────────────────
-// GET PROFILE (protected route example)
+// GET PROFILE
 // GET /api/auth/me
 // ─────────────────────────────────────────────
 async function getMe(req, res, next) {
   try {
-    // req.userId is set by auth middleware
-    const user = findUserById(req.userId);
+    // find by id but exclude password from result
+    const user = await User.findById(req.userId).select('-password');
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -149,12 +131,9 @@ async function getMe(req, res, next) {
 
     res.json({
       success: true,
-      user: {
-        id   : user.id,
-        name : user.name,
-        email: user.email,
-      },
+      user,
     });
+
   } catch (error) {
     next(error);
   }

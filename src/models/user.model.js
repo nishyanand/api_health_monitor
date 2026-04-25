@@ -1,22 +1,41 @@
-// Temporary in-memory user store
-// We will replace this with PostgreSQL in the next step
-const users = [];
+const mongoose = require('mongoose');
+const bcrypt   = require('bcryptjs');
 
-// Find user by email
-function findUserByEmail(email) {
-  return users.find((u) => u.email === email) || null;
-}
+const userSchema = new mongoose.Schema(
+  {
+    name: {
+      type    : String,
+      required: [true, 'Name is required'],
+      trim    : true,
+    },
+    email: {
+      type     : String,
+      required : [true, 'Email is required'],
+      unique   : true,
+      lowercase: true,
+      trim     : true,
+    },
+    password: {
+      type     : String,
+      required : [true, 'Password is required'],
+      minlength: [6, 'Password must be at least 6 characters'],
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
 
-// Find user by id
-function findUserById(id) {
-  return users.find((u) => u.id === id) || null;
-}
+// ✅ async without next — works in all mongoose versions
+userSchema.pre('save', async function () {
+  if (!this.isModified('password')) return;
+  this.password = await bcrypt.hash(this.password, 10);
+});
 
-// Create new user
-function createUser({ id, name, email, password }) {
-  const newUser = { id, name, email, password };
-  users.push(newUser);
-  return newUser;
-}
+userSchema.methods.comparePassword = async function (enteredPassword) {
+  return bcrypt.compare(enteredPassword, this.password);
+};
 
-module.exports = { findUserByEmail, findUserById, createUser };
+const User = mongoose.model('User', userSchema);
+
+module.exports = User;
